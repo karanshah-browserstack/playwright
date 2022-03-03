@@ -24,6 +24,7 @@ import { kBrowserOrContextClosedError } from '../utils/errors';
 import { CallMetadata, SdkObject } from '../server/instrumentation';
 import { rewriteErrorMessage } from '../utils/stackTrace';
 import type { PlaywrightDispatcher } from './playwrightDispatcher';
+import { AndroidDeviceDispatcher } from './androidDispatcher';
 
 export const dispatcherSymbol = Symbol('dispatcher');
 
@@ -134,7 +135,24 @@ export class Root extends Dispatcher<{ guid: '' }, any> {
     assert(!this._initialized);
     this._initialized = true;
     return {
-      playwright: await this.createPlaywright(this, params),
+      playwright: await this.createPlaywright(this, params)
+    };
+  }
+}
+
+export class AndroidRoot extends Dispatcher<{ guid: '' }, any> {
+  private _initialized = false;
+
+  constructor(connection: DispatcherConnection, private readonly createPlaywright?: (scope: DispatcherScope, options: channels.RootInitializeParams) => Promise<AndroidDeviceDispatcher>) {
+    super(connection, { guid: '' }, 'AndroidRoot', {}, true);
+  }
+
+  async initialize(params: channels.AndroidRootInitializeParams): Promise<channels.AndroidRootInitializeResult> {
+    assert(this.createPlaywright);
+    assert(!this._initialized);
+    this._initialized = true;
+    return {
+      playwright: await this.createPlaywright(this, params)
     };
   }
 }

@@ -22,7 +22,7 @@ import os from 'os';
 import path from 'path';
 import * as stream from 'stream';
 import * as ws from 'ws';
-import { createGuid, makeWaitForNextTask, removeFolders } from '../../utils/utils';
+import { createGuid, makeWaitForNextTask, removeFolders, debugMode } from '../../utils/utils';
 import { BrowserOptions, BrowserProcess, PlaywrightOptions } from '../browser';
 import { BrowserContext, validateBrowserContextOptions } from '../browserContext';
 import { ProgressController } from '../progress';
@@ -33,7 +33,7 @@ import { RecentLogsCollector } from '../../utils/debugLogger';
 import { gracefullyCloseSet } from '../../utils/processLauncher';
 import { TimeoutSettings } from '../../utils/timeoutSettings';
 import { AndroidWebView } from '../../protocol/channels';
-import { SdkObject, internalCallMetadata } from '../instrumentation';
+import { SdkObject, internalCallMetadata, CallMetadata } from '../instrumentation';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
@@ -92,6 +92,27 @@ export class Android extends SdkObject {
 
   _deviceClosed(device: AndroidDevice) {
     this._devices.delete(device.serial);
+  }
+
+  async launch(metadata: CallMetadata, options: types.LaunchOptions, protocolLogger?: types.ProtocolLogger): Promise<AndroidDevice[]> {
+    options = this._validateLaunchOptions(options);
+    const controller = new ProgressController(metadata, this);
+    controller.setLogName('android');
+    const device = await controller.run(progress => {
+      return this.devices({});
+    }, TimeoutSettings.timeout(options));
+    return device;
+  }
+  private _validateLaunchOptions<Options extends types.LaunchOptions>(options: Options): Options {
+    const { devtools = false } = options;
+    let { headless = !devtools, downloadsPath, proxy } = options;
+    if (debugMode())
+      headless = false;
+    if (downloadsPath && !path.isAbsolute(downloadsPath))
+      downloadsPath = path.join(process.cwd(), downloadsPath);
+    if (this._playwrightOptions.socksProxyPort)
+      proxy = { server: `socks5://127.0.0.1:${this._playwrightOptions.socksProxyPort}` };
+    return { ...options, devtools, headless, downloadsPath, proxy };
   }
 }
 

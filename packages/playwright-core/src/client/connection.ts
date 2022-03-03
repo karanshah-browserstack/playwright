@@ -55,6 +55,17 @@ class Root extends ChannelOwner<channels.RootChannel> {
   }
 }
 
+class AndroidRoot extends ChannelOwner<channels.AndroidRootChannel> {
+  constructor(connection: Connection) {
+    super(connection, 'AndroidRoot', '', {});
+  }
+
+  async initialize(): Promise<AndroidDevice> {
+    return AndroidDevice.from((await this._channel.initialize({
+      sdkLanguage: 'javascript',
+    })).playwright);
+  }
+}
 class DummyChannelOwner<T> extends ChannelOwner<T> {
 }
 
@@ -64,12 +75,14 @@ export class Connection extends EventEmitter {
   private _lastId = 0;
   private _callbacks = new Map<number, { resolve: (a: any) => void, reject: (a: Error) => void, stackTrace: ParsedStackTrace | null }>();
   private _rootObject: Root;
+  private _androidRootObject: AndroidRoot;
   private _closedErrorMessage: string | undefined;
   private _isRemote = false;
 
   constructor() {
     super();
     this._rootObject = new Root(this);
+    this._androidRootObject = new AndroidRoot(this);
   }
 
   markAsRemote() {
@@ -82,6 +95,10 @@ export class Connection extends EventEmitter {
 
   async initializePlaywright(): Promise<Playwright> {
     return await this._rootObject.initialize();
+  }
+
+  async initializeAndroidDevice(): Promise<AndroidDevice> {
+    return await this._androidRootObject.initialize();
   }
 
   pendingProtocolCalls(): ParsedStackTrace[] {

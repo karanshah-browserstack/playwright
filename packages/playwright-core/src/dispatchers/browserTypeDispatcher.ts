@@ -93,7 +93,7 @@ export class BrowserTypeDispatcher extends Dispatcher<BrowserType, channels.Brow
   }
 }
 
-class SocksInterceptor {
+export class SocksInterceptor {
   private _handler: socks.SocksProxyHandler;
   private _channel: channels.SocksSupportChannel & EventEmitter;
   private _socksSupportObjectGuid: string;

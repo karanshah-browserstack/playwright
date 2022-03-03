@@ -28,6 +28,7 @@ const debugLoggerColorMap = {
   'channel:command': 33, // blue
   'channel:response': 202, // orange
   'channel:event': 207, // magenta
+  'android': 0, //reset
 };
 export type LogName = keyof typeof debugLoggerColorMap;
 

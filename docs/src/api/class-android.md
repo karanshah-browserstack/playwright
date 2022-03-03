@@ -90,3 +90,90 @@ This setting will change the default maximum time for all the methods accepting 
 - `timeout` <[float]>
 
 Maximum time in milliseconds
+
+## async method: Android.connect
+- returns: <[AndroidDevice]>
+
+This methods attaches Playwright to an existing android instance.
+### param: Android.connect.wsEndpoint
+- `wsEndpoint` <[string]>
+
+A browser websocket endpoint to connect to.
+
+### option: Android.connect.headers
+- `headers` <[Object]<[string], [string]>>
+
+Additional HTTP headers to be sent with web socket connect request. Optional.
+
+### option: Android.connect.slowMo
+- `slowMo` <[float]>
+
+Slows down Playwright operations by the specified amount of milliseconds. Useful so that you
+can see what is going on. Defaults to 0.
+
+### option: Android.connect.logger
+* langs: js
+- `logger` <[Logger]>
+
+Logger sink for Playwright logging. Optional.
+
+### option: Android.connect.timeout
+- `timeout` <[float]>
+
+Maximum time in milliseconds to wait for the connection to be established. Defaults to
+`30000` (30 seconds). Pass `0` to disable timeout.
+
+## async method: Android.launch
+- returns: <[AndroidDevice]>
+
+Returns the android instance.
+
+### option: Android.launch.-inline- = %%-shared-browser-options-list-%%
+### option: Android.launch.firefoxUserPrefs = %%-js-python-browser-option-firefoxuserprefs-%%
+### option: Android.launch.firefoxUserPrefs2 = %%-csharp-java-browser-option-firefoxuserprefs-%%
+### option: Android.launch.logger = %%-browser-option-logger-%%
+### option: Android.launch.slowMo = %%-browser-option-slowmo-%%
+### option: Android.launch.ignoreDefaultArgs = %%-csharp-java-browser-option-ignoredefaultargs-%%
+### option: Android.launch.ignoreAllDefaultArgs = %%-csharp-java-browser-option-ignorealldefaultargs-%%
+
+## async method: Android.launchServer
+* langs: js
+- returns: <[BrowserServer]>
+
+Returns the browser app instance.
+
+Launches browser server that client can connect to. An example of launching a browser executable and connecting to it
+later:
+
+```js
+const { _android } = require('playwright');  // Or 'webkit' or 'firefox'.
+
+(async () => {
+  const browserServer = await _android.launchServer();
+  const wsEndpoint = browserServer.wsEndpoint();
+  // Use web socket endpoint later to establish a connection.
+  const browser = await _android.connect(wsEndpoint);
+  // Close browser instance.
+  await _android.close();
+})();
+```
+
+### option: Android.launchServer.-inline- = %%-shared-browser-options-list-%%
+### option: Android.launchServer.logger = %%-browser-option-logger-%%
+
+### option: Android.launchServer.port
+- `port` <[int]>
+
+Port to use for the web socket. Defaults to 0 that picks any available port.
+
+### option: Android.launchServer.wsPath
+- `wsPath` <[string]>
+
+Path at which to serve the Browser Server. For security, this defaults to an
+unguessable string.
+
+:::warning
+Any process or web page (including those running in Playwright) with knowledge
+of the `wsPath` can take control of the OS user. For this reason, you should
+use an unguessable token when using this option.
+:::

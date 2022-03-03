@@ -19,6 +19,11 @@ import { Android, AndroidDevice, SocketBackend } from '../server/android/android
 import * as channels from '../protocol/channels';
 import { BrowserContextDispatcher } from './browserContextDispatcher';
 import { CallMetadata } from '../server/instrumentation';
+import { ProgressController } from '../server/progress';
+import { getUserAgent } from '../utils/utils';
+import { WebSocketTransport } from '../server/transport';
+import { SocksInterceptor } from './browserTypeDispatcher';
+import { JsonPipeDispatcher } from '../dispatchers/jsonPipeDispatcher';
 
 export class AndroidDispatcher extends Dispatcher<Android, channels.AndroidChannel> implements channels.AndroidChannel {
   _type_Android = true;
@@ -36,6 +41,43 @@ export class AndroidDispatcher extends Dispatcher<Android, channels.AndroidChann
   async setDefaultTimeoutNoReply(params: channels.AndroidSetDefaultTimeoutNoReplyParams) {
     this._object.setDefaultTimeout(params.timeout);
   }
+  
+  async connect(params: channels.AndroidConnectParams, metadata: CallMetadata): Promise<channels.AndroidConnectResult> {
+    const controller = new ProgressController(metadata, this._object);
+    controller.setLogName('android');
+    return await controller.run(async progress => {
+      const paramsHeaders = Object.assign({ 'User-Agent': getUserAgent() }, params.headers || {});
+      const transport = await WebSocketTransport.connect(progress, params.wsEndpoint, paramsHeaders, true);
+      let socksInterceptor: SocksInterceptor | undefined;
+      const pipe = new JsonPipeDispatcher(this._scope);
+      transport.onmessage = json => {
+        if (json.method === '__create__' && json.params.type === 'SocksSupport')
+          socksInterceptor = new SocksInterceptor(transport, params.socksProxyRedirectPortForTest, json.params.guid);
+        if (socksInterceptor?.interceptMessage(json))
+          return;
+        const cb = () => {
+          try {
+            pipe.dispatch(json);
+          } catch (e) {
+            transport.close();
+          }
+        };
+        if (params.slowMo)
+          setTimeout(cb, params.slowMo);
+        else
+          cb();
+      };
+      pipe.on('message', message => {
+        transport.send(message);
+      });
+      transport.onclose = () => {
+        socksInterceptor?.cleanup();
+        pipe.wasClosed();
+      };
+      pipe.on('close', () => transport.close());
+      return { pipe };
+    }, params.timeout || 0);
+  }
 }
 
 export class AndroidDeviceDispatcher extends Dispatcher<AndroidDevice, channels.AndroidDeviceChannel> implements channels.AndroidDeviceChannel {
@@ -51,6 +93,7 @@ export class AndroidDeviceDispatcher extends Dispatcher<AndroidDevice, channels.
     super(scope, device, 'AndroidDevice', {
       model: device.model,
       serial: device.serial,
+      preLaunchedDevice: (device ? device : undefined),
     }, true);
     for (const webView of device.webViews())
       this._dispatchEvent('webViewAdded', { webView });
@@ -190,6 +233,96 @@ export class AndroidSocketDispatcher extends Dispatcher<SocketBackend, channels.
 
   async close(params: channels.AndroidSocketCloseParams, metadata: CallMetadata): Promise<void> {
     this._object.close();
+  }
+}
+
+// This class implements multiplexing browser dispatchers over a single Browser instance.
+export class ConnectedAndroidDeviceDispatcher extends Dispatcher<AndroidDevice, channels.AndroidDeviceChannel> implements channels.AndroidDeviceChannel {
+  _type_AndroidDevice: boolean = true;
+  _type_EventTarget: boolean = true;
+
+  constructor(scope: DispatcherScope, device: AndroidDevice) {
+    super(scope, device, 'AndroidDevice', {
+      model: device.model,
+      serial: device.serial
+    }, true);
+  }
+
+  async wait(params: channels.AndroidDeviceWaitParams, metadata?: channels.Metadata) {
+    return this._object.send('wait', params);
+  }
+  async fill(params: channels.AndroidDeviceFillParams, metadata?: channels.Metadata) {
+    await this._object.send('click', { selector: params.selector });
+    await this._object.send('fill', params);
+  }
+  async tap(params: channels.AndroidDeviceTapParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  drag(params: channels.AndroidDeviceDragParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  fling(params: channels.AndroidDeviceFlingParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  longTap(params: channels.AndroidDeviceLongTapParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  pinchClose(params: channels.AndroidDevicePinchCloseParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  pinchOpen(params: channels.AndroidDevicePinchOpenParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  scroll(params: channels.AndroidDeviceScrollParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  swipe(params: channels.AndroidDeviceSwipeParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  info(params: channels.AndroidDeviceInfoParams, metadata?: channels.Metadata): Promise<channels.AndroidDeviceInfoResult> {
+    throw new Error('Method not implemented.');
+  }
+  screenshot(params?: channels.AndroidDeviceScreenshotParams, metadata?: channels.Metadata): Promise<channels.AndroidDeviceScreenshotResult> {
+    throw new Error('Method not implemented.');
+  }
+  inputType(params: channels.AndroidDeviceInputTypeParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  inputPress(params: channels.AndroidDeviceInputPressParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  inputTap(params: channels.AndroidDeviceInputTapParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  inputSwipe(params: channels.AndroidDeviceInputSwipeParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  inputDrag(params: channels.AndroidDeviceInputDragParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  launchBrowser(params: channels.AndroidDeviceLaunchBrowserParams, metadata?: channels.Metadata): Promise<channels.AndroidDeviceLaunchBrowserResult> {
+    throw new Error('Method not implemented.');
+  }
+  open(params: channels.AndroidDeviceOpenParams, metadata?: channels.Metadata): Promise<channels.AndroidDeviceOpenResult> {
+    throw new Error('Method not implemented.');
+  }
+  shell(params: channels.AndroidDeviceShellParams, metadata?: channels.Metadata): Promise<channels.AndroidDeviceShellResult> {
+    throw new Error('Method not implemented.');
+  }
+  installApk(params: channels.AndroidDeviceInstallApkParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  push(params: channels.AndroidDevicePushParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  setDefaultTimeoutNoReply(params: channels.AndroidDeviceSetDefaultTimeoutNoReplyParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
+  }
+  connectToWebView(params: channels.AndroidDeviceConnectToWebViewParams, metadata?: channels.Metadata): Promise<channels.AndroidDeviceConnectToWebViewResult> {
+    throw new Error('Method not implemented.');
+  }
+  close(params?: channels.AndroidDeviceCloseParams, metadata?: channels.Metadata): Promise<void> {
+    throw new Error('Method not implemented.');
   }
 }
 

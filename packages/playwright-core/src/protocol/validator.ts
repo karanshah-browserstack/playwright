@@ -196,6 +196,9 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   scheme.RootInitializeParams = tObject({
     sdkLanguage: tString,
   });
+  scheme.AndroidRootInitializeParams = tObject({
+    sdkLanguage: tString,
+  });
   scheme.PlaywrightNewRequestParams = tObject({
     baseURL: tOptional(tString),
     userAgent: tOptional(tString),
@@ -1274,6 +1277,13 @@ export function createScheme(tChannel: (name: string) => Validator): Scheme {
   scheme.AndroidDevicesParams = tOptional(tObject({}));
   scheme.AndroidSetDefaultTimeoutNoReplyParams = tObject({
     timeout: tNumber,
+  });
+  scheme.AndroidConnectParams = tObject({
+    wsEndpoint: tString,
+    headers: tOptional(tAny),
+    slowMo: tOptional(tNumber),
+    timeout: tOptional(tNumber),
+    socksProxyRedirectPortForTest: tOptional(tNumber),
   });
   scheme.AndroidSocketWriteParams = tObject({
     data: tBinary,

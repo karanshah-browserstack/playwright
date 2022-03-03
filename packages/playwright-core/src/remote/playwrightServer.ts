@@ -17,7 +17,7 @@
 import debug from 'debug';
 import * as http from 'http';
 import WebSocket from 'ws';
-import { DispatcherConnection, DispatcherScope, Root } from '../dispatchers/dispatcher';
+import { AndroidRoot, DispatcherConnection, DispatcherScope, Root } from '../dispatchers/dispatcher';
 import { internalCallMetadata } from '../server/instrumentation';
 import { createPlaywright, Playwright } from '../server/playwright';
 import { Browser } from '../server/browser';
@@ -25,6 +25,8 @@ import { gracefullyCloseAll } from '../utils/processLauncher';
 import { registry } from '../utils/registry';
 import { PlaywrightDispatcher } from '../dispatchers/playwrightDispatcher';
 import { SocksProxy } from '../utils/socksProxy';
+import { AndroidDevice } from '../server/android/android';
+import { AndroidDeviceDispatcher } from '../dispatchers/androidDispatcher';
 
 const debugLog = debug('pw:server');
 
@@ -33,6 +35,7 @@ export class PlaywrightServer {
   private _maxClients: number;
   private _enableSocksProxy: boolean;
   private _browser: Browser | undefined;
+  private _android: AndroidDevice | undefined;
   private _wsServer: WebSocket.Server | undefined;
   private _clientsCount = 0;
 
@@ -41,11 +44,12 @@ export class PlaywrightServer {
     return new PlaywrightServer(path, maxClients, enableSocksProxy);
   }
 
-  constructor(path: string, maxClients: number, enableSocksProxy: boolean, browser?: Browser) {
+  constructor(path: string, maxClients: number, enableSocksProxy: boolean, browser?: Browser, android?: AndroidDevice) {
     this._path = path;
     this._maxClients = maxClients;
     this._enableSocksProxy = enableSocksProxy;
     this._browser = browser;
+    this._android = android;
   }
 
   async listen(port: number = 0): Promise<string> {
@@ -77,7 +81,7 @@ export class PlaywrightServer {
         return;
       }
       this._clientsCount++;
-      const connection = new Connection(ws, request, this._enableSocksProxy, this._browser, () => this._clientsCount--);
+      const connection = new Connection(ws, request, this._enableSocksProxy, this._browser, this._android,  () => this._clientsCount--);
       (ws as any)[kConnectionSymbol] = connection;
     });
 
@@ -119,7 +123,7 @@ class Connection {
   private _id: number;
   private _disconnected = false;
 
-  constructor(ws: WebSocket, request: http.IncomingMessage, enableSocksProxy: boolean, browser: Browser | undefined, onClose: () => void) {
+  constructor(ws: WebSocket, request: http.IncomingMessage, enableSocksProxy: boolean, browser: Browser | undefined, android: AndroidDevice| undefined, onClose: () => void) {
     this._ws = ws;
     this._onClose = onClose;
     this._id = ++lastConnectionId;
@@ -137,18 +141,24 @@ class Connection {
     ws.on('close', () => this._onDisconnect());
     ws.on('error', error => this._onDisconnect(error));
 
-    new Root(this._dispatcherConnection, async scope => {
-      if (browser)
-        return await this._initPreLaunchedBrowserMode(scope, browser);
-      const url = new URL('http://localhost' + (request.url || ''));
-      const browserHeader = request.headers['x-playwright-browser'];
-      const browserAlias = url.searchParams.get('browser') || (Array.isArray(browserHeader) ? browserHeader[0] : browserHeader);
-      const proxyHeader = request.headers['x-playwright-proxy'];
-      const proxyValue = url.searchParams.get('proxy') || (Array.isArray(proxyHeader) ? proxyHeader[0] : proxyHeader);
-      if (!browserAlias)
-        return await this._initPlaywrightConnectMode(scope, enableSocksProxy && proxyValue === '*');
-      return await this._initLaunchBrowserMode(scope, enableSocksProxy && proxyValue === '*', browserAlias);
-    });
+    if(android){
+      new AndroidRoot(this._dispatcherConnection, async scope => {
+        return await this._initPreLaunchedAndroidMode(scope, android);
+      });
+    } else{
+      new Root(this._dispatcherConnection, async scope => {
+        if (browser)
+          return await this._initPreLaunchedBrowserMode(scope, browser);
+        const url = new URL('http://localhost' + (request.url || ''));
+        const browserHeader = request.headers['x-playwright-browser'];
+        const browserAlias = url.searchParams.get('browser') || (Array.isArray(browserHeader) ? browserHeader[0] : browserHeader);
+        const proxyHeader = request.headers['x-playwright-proxy'];
+        const proxyValue = url.searchParams.get('proxy') || (Array.isArray(proxyHeader) ? proxyHeader[0] : proxyHeader);
+        if (!browserAlias)
+          return await this._initPlaywrightConnectMode(scope, enableSocksProxy && proxyValue === '*');
+        return await this._initLaunchBrowserMode(scope, enableSocksProxy && proxyValue === '*', browserAlias);
+      });
+    } 
   }
 
   private async _initPlaywrightConnectMode(scope: DispatcherScope, enableSocksProxy: boolean) {
@@ -196,6 +206,38 @@ class Connection {
     // TODO: it is technically possible to launch more browsers over protocol.
     this._cleanups.push(() => playwrightDispatcher.cleanup());
     return playwrightDispatcher;
+  }
+
+  // private async _initPreLaunchedAndroidMode(scope: DispatcherScope, android: AndroidDevice) {
+  //   debugLog(`[id=${this._id}] engaged pre-launched mode`);
+  //   android.on(AndroidDevice.Events.Closed, () => {
+  //     // Underlying android device did close for some reason - force disconnect the client.
+  //     this.close({ code: 1001, reason: 'Android Device closed' });
+  //   });
+
+  //   android.
+  //   // const playwright = android.options.rootSdkObject as Playwright;
+  //   // const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, undefined, browser);
+  //   const androidDispatcher = new PlaywrightDispatcher(scope, android);
+  //   // In pre-launched mode, keep the browser and just cleanup new contexts.
+  //   // TODO: it is technically possible to launch more browsers over protocol.
+  //   // this._cleanups.push(() => androidDispatcher.cleanup());
+  //   return androidDispatcher;
+  // }
+
+  private async _initPreLaunchedAndroidMode(scope: DispatcherScope, android: AndroidDevice) {
+    debugLog(`[id=${this._id}] engaged pre-launched mode`);
+    android.on(AndroidDevice.Events.Closed, () => {
+      // Underlying android device did close for some reason - force disconnect the client.
+      this.close({ code: 1001, reason: 'Android Device closed' });
+    });
+    // const playwright = android.options.rootSdkObject as Playwright;
+    // const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, undefined, browser);
+    const androidDispatcher = new AndroidDeviceDispatcher(scope, android);
+    // In pre-launched mode, keep the browser and just cleanup new contexts.
+    // TODO: it is technically possible to launch more browsers over protocol.
+    // this._cleanups.push(() => androidDispatcher.cleanup());
+    return androidDispatcher;
   }
 
   private async _enableSocksProxy(playwright: Playwright) {
